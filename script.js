@@ -299,6 +299,31 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowLeft') goPrev();
 });
 
+// --- TOUCH / SWIPE SUPPORT 📱 ---
+let touchStartX = 0;
+let touchEndX = 0;
+
+const sliderArea = document.getElementById('app');
+
+sliderArea.addEventListener('touchstart', e => {
+    touchStartX = e.changedTouches[0].screenX;
+}, {passive: true});
+
+sliderArea.addEventListener('touchend', e => {
+    touchEndX = e.changedTouches[0].screenX;
+    handleSwipe();
+}, {passive: true});
+
+function handleSwipe() {
+    // Если инпут в фокусе - не свайпаем, а то бесит
+    if(document.activeElement.tagName === 'INPUT') return;
+
+    const SWIPE_THRESHOLD = 50; // Насколько сильно надо свайпнуть
+    if (touchEndX < touchStartX - SWIPE_THRESHOLD) goNext(); // Свайп влево -> Next
+    if (touchEndX > touchStartX + SWIPE_THRESHOLD) goPrev(); // Свайп вправо -> Prev
+}
+
+
 async function renderApp() {
     if (currentSlide === 4 && stats.totalGenres <= 5) currentSlide = 7;
 
@@ -366,9 +391,18 @@ async function renderApp() {
             
             break;
 
-        case 1: 
-            app.innerHTML += `<div class="slide-content animate-up"><h1 class="big-stat" style="font-size:3rem; color:white">HI THERE!</h1><p class="text-2xl">This is your Namida Wrapped ${new Date().getFullYear()}</p><p class="text-gray-500 mt-2">Are you ready?</p><p class="text-xs text-gray-600 mt-4">(You can use arrow keys on your keyboard)</p></div>`; 
+                case 1: 
+            app.innerHTML += `
+                <div class="slide-content animate-up">
+                    <h1 class="big-stat" style="font-size:3rem; color:white">HI THERE!</h1>
+                    <p class="text-2xl">This is your Namida Wrapped ${new Date().getFullYear()}</p>
+                    <p class="text-gray-500 mt-2">Are you ready?</p>
+                    <!-- Класс desktop-only скроет это на мобиле -->
+                    <p class="text-xs text-gray-600 mt-4 desktop-only">(You can use arrow keys on your keyboard)</p>
+                    <p class="text-xs text-gray-600 mt-4 md:hidden">(Swipe to navigate)</p>
+                </div>`; 
             break;
+
         
         case 2: 
             app.innerHTML += `<div class="slide-content animate-up"><h2 class="text-3xl font-bold mb-4">You listened.<br>We counted.</h2><p class="text-gray-400 mb-4">Enter your nickname (for endcard)</p><input id="ni" type="text" class="bg-transparent border-b-2 border-white text-3xl w-full p-2 outline-none" placeholder="Name..." value="${userName}"></div>`; 
@@ -471,37 +505,116 @@ async function renderApp() {
             app.innerHTML += `<div class="slide-content animate-up"><h2 class="text-3xl font-bold mb-8">Your favourite artists</h2>${htmlListA}</div>`;
             break;
 
-        case 17: 
+                case 17: 
             const topArtHero = await fetchImage(stats.artists[0].name);
             const heroBg = topArtHero ? `url(${topArtHero})` : 'linear-gradient(45deg, #333, #111)';
-            const colArt = stats.artists.slice(0,5).map((a,i)=>`<div class="truncate text-xs font-bold mb-1">${i+1} ${a.name}</div>`).join('');
-            const colTrk = stats.tracks.slice(0,5).map((t,i)=>`<div class="truncate text-xs font-bold mb-1">${i+1} ${t.meta.title}</div>`).join('');
+            
+            // Стили для строки списка: компактно, но без обрезки
+            const rowStyle = "font-size: 0.75rem; font-weight: 700; margin-bottom: 2px; white-space: nowrap; line-height: 1.2; color: black;";
+
+            // JS обрезка текста, чтобы не юзать CSS overflow
+            const colArt = stats.artists.slice(0,5).map((a,i)=>
+                `<div style="${rowStyle}">
+                    ${i+1} ${cutText(a.name, 25)}
+                </div>`
+            ).join('');
+            
+            const colTrk = stats.tracks.slice(0,5).map((t,i)=>
+                `<div style="${rowStyle}">
+                    ${i+1} ${cutText(t.meta.title, 25)}
+                </div>`
+            ).join('');
+            
             let finalGenre = stats.genres[0][0];
-            if ((finalGenre.toLowerCase() === 'unknown' || finalGenre.toLowerCase() === 'unknown genre') && stats.genres[1]) {
+            if ((finalGenre.toLowerCase().includes('unknown')) && stats.genres[1]) {
                 finalGenre = stats.genres[1][0];
             }
+
             app.innerHTML += `
-                <div class="slide-content animate-pop" style="padding:0; justify-content:center; align-items:center;">
-                    <div class="summary-card" style="width:100%; max-width:380px;">
-                         <div style="height:250px; width:100%; background:${heroBg} center/cover; filter:grayscale(100%) contrast(110%); position:absolute; top:0; left:0;"></div>
-                         <div style="height:250px; width:100%; background:linear-gradient(to bottom, transparent, #F2F0E9 90%); position:absolute; top:0; left:0;"></div>
-                         <div style="position:relative; z-index:2; margin-top:160px;">
-                            <h1 style="font-size:3.5rem; line-height:0.8; color:black; margin-bottom:20px;">WRAPPED<br><span style="color:#d2fa39; -webkit-text-stroke:1px black;">2025</span></h1>
-                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
-                                <div><h3 style="border-bottom:2px solid black; font-size:0.8rem; margin-bottom:5px;">TOP ARTISTS</h3>${colArt}</div>
-                                <div><h3 style="border-bottom:2px solid black; font-size:0.8rem; margin-bottom:5px;">TOP SONGS</h3>${colTrk}</div>
+                <div class="slide-content animate-pop" style="padding:0; justify-content:center; align-items:center; height: auto; min-height: 100vh;">
+                    
+                    <!-- CARD CONTAINER -->
+                    <div id="finalCard" class="summary-card">
+                         <!-- Top Image Background -->
+                         <div style="height:280px; width:100%; background:${heroBg} center/cover; filter:grayscale(100%) contrast(110%); position:absolute; top:0; left:0;"></div>
+                         <!-- Gradient Overlay -->
+                         <div style="height:281px; width:100%; background:linear-gradient(to bottom, transparent 20%, #F2F0E9 95%); position:absolute; top:0; left:0;"></div>
+                         
+                         <!-- Content -->
+                         <div style="position:relative; z-index:2; margin-top:180px;">
+                            <h1 style="font-size:4rem; line-height:0.8; color:black; margin-bottom:20px; letter-spacing: -2px;">WRAPPED<br><span style="color:#d2fa39; -webkit-text-stroke:1.5px black;">2025</span></h1>
+                            
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom: 25px;">
+                                <div><h3 style="border-bottom:3px solid black; font-size:0.9rem; margin-bottom:8px; padding-bottom:2px;">TOP ARTISTS</h3>${colArt}</div>
+                                <div><h3 style="border-bottom:3px solid black; font-size:0.9rem; margin-bottom:8px; padding-bottom:2px;">TOP SONGS</h3>${colTrk}</div>
                             </div>
-                            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:end;">
-                                <div><div style="font-size:0.6rem; font-weight:900; color:#666;">MINUTES LISTENED</div><div style="font-size:1.5rem; font-weight:900;">${Math.round(stats.totalMs/60000).toLocaleString()}</div></div>
-                                <div style="text-align:right"><div style="font-size:0.6rem; font-weight:900; color:#666;">TOP GENRE</div><div style="background:black; color:#d2fa39; padding:2px 6px; font-weight:900; display:inline-block; transform:rotate(-2deg)">${finalGenre}</div></div>
+
+                            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:end; border-top: 2px solid #ddd; padding-top: 15px;">
+                                <div>
+                                    <div style="font-size:0.6rem; font-weight:900; color:#666; text-transform: uppercase;">Minutes Listened</div>
+                                    <div style="font-size:1.8rem; font-weight:900; line-height: 1;">${Math.round(stats.totalMs/60000).toLocaleString()}</div>
+                                </div>
+                                <div style="text-align:right">
+                                    <div style="font-size:0.6rem; font-weight:900; color:#666; text-transform: uppercase;">Top Genre</div>
+                                    <div style="background:black; color:#d2fa39; padding:2px 8px; font-weight:900; display:inline-block; transform:rotate(-2deg); font-size: 1.1rem;">${finalGenre}</div>
+                                </div>
+                            </div>
+
+                            <!-- ИМЯ ЮЗЕРА ТЕПЕРЬ ВНУТРИ КАРТОЧКИ -->
+                            <div style="margin-top: 20px; display:flex; justify-content:space-between; align-items:center;">
+                                <div style="font-family: monospace; font-size: 0.7rem; color: #888;">namida-wrapped.local</div>
+                                <div style="font-weight: 900; font-size: 1rem; text-transform: uppercase; color: black;">${userName || 'Music Lover'}</div>
                             </div>
                          </div>
                     </div>
-                    ${userName ? `<p class="mt-4 text-gray-500 text-xs font-mono">Wrapped for ${userName}</p>` : ''}
-                    <button onclick="location.reload()" class="btn-geo mt-6 text-sm py-3">REPLAY</button>
+
+                    <!-- BUTTONS -->
+                    <div class="flex gap-4 mt-8 w-full max-w-[450px]">
+                        <button onclick="location.reload()" class="btn-geo text-sm py-3 flex-1" style="background:#333; color:white;">REPLAY ↺</button>
+                        <button onclick="saveCard()" class="btn-geo text-sm py-3 flex-1">SAVE IMAGE ⬇</button>
+                    </div>
                 </div>
             `;
+            
+            window.saveCard = () => {
+                const card = document.getElementById('finalCard');
+                const btn = document.querySelector('button[onclick="saveCard()"]');
+                const oldText = btn.innerText;
+                
+                btn.innerText = "COOKING... 🍳";
+                
+                // htmlToImage - глобальная переменная из CDN
+                htmlToImage.toPng(card, {
+                    quality: 1.0,
+                    pixelRatio: 3, // Чтобы не мыло, а HD
+                    backgroundColor: '#F2F0E9', // На всякий случай фон
+                })
+                .then(function (dataUrl) {
+                    const link = document.createElement('a');
+                    link.download = `Namida_Wrapped_${new Date().getFullYear()}_${userName}.png`;
+                    link.href = dataUrl;
+                    link.click();
+                    
+                    btn.innerText = "SAVED! 🔥";
+                    setTimeout(()=> btn.innerText = oldText, 2000);
+                })
+                .catch(function (error) {
+                    console.error('oops, something went wrong!', error);
+                    btn.innerText = "ERROR 💀";
+                    alert("Couldn't render to a picture. Do a screenshot mate.");
+                });
+            };
             break;
+
+
     }
 }
+function cutText(str, len = 22) {
+    if (!str) return "";
+    if (str.length > len) {
+        return str.substring(0, len).trim() + "...";
+    }
+    return str;
+}
+
 renderApp();
