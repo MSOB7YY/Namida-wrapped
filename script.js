@@ -126,6 +126,50 @@ async function getImagesForList(items, isTracks = true) {
     }));
 }
 
+// --- PRELOADER 🚀 ---
+async function preloadAssets() {
+    const status = document.getElementById('status');
+    status.innerText = "Downloading Arts... 🎨 (Hold tight)";
+
+    const promises = [];
+
+    // 1. Топ трек и топ-5 треков
+    if (stats.tracks.length > 0) {
+        // Top 1
+        promises.push(fetchImage(stats.tracks[0].meta.artist, stats.tracks[0].meta.album));
+        // Top 5 list
+        stats.tracks.slice(0, 5).forEach(t => {
+            promises.push(fetchImage(t.meta.artist, t.meta.album));
+        });
+    }
+
+    // 2. Топ альбом и топ-5 альбомов
+    if (stats.albums.length > 0) {
+        // Top 1
+        promises.push(fetchImage(stats.albums[0].artist, stats.albums[0].name));
+        // Top 5 grid
+        stats.albums.slice(0, 5).forEach(a => {
+            promises.push(fetchImage(a.artist, a.name));
+        });
+    }
+
+    // 3. Топ артист и топ-5 артистов
+    if (stats.artists.length > 0) {
+        // Top 1
+        promises.push(fetchImage(stats.artists[0].name));
+        // Top 5 list
+        stats.artists.slice(0, 5).forEach(a => {
+            promises.push(fetchImage(a.name));
+        });
+    }
+
+    // Ждём пока всё загрузится (используем allSettled, чтобы одна ошибка не положила всё)
+    // Это заполнит твой imgCache
+    await Promise.allSettled(promises);
+    
+    console.log("Preload complete! Cache size:", imgCache.size);
+}
+
 // --- LOGIC ---
 async function processFiles(masterFile) {
     const status = document.getElementById('status');
@@ -226,6 +270,14 @@ async function processFiles(masterFile) {
         }
 
         calculateStats();
+
+        // --- ВОТ ТУТ ИЗМЕНЕНИЯ ---
+        // Сначала грузим всё тяжелое, пока юзер смотрит на лоадер
+        await preloadAssets(); 
+        
+        status.innerText = "Ready! 🚀";
+        // -------------------------
+
         currentSlide = 1;
         renderApp();
     } catch (e) {
